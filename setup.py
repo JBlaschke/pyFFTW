@@ -54,6 +54,7 @@ import contextlib
 import os
 import sys
 import versioneer
+import logging
 
 
 if os.environ.get("READTHEDOCS") == "True":
@@ -164,13 +165,13 @@ class EnvironmentSniffer(object):
 
     '''
     def __init__(self, compiler):
-        log.debug("Compiler include_dirs: %s" % compiler.include_dirs)
+        logging.debug("Compiler include_dirs: %s" % compiler.include_dirs)
         if hasattr(compiler, "initialize"):
             compiler.initialize() # to set all variables
-            log.debug("Compiler include_dirs after initialize: %s" % compiler.include_dirs)
+            logging.debug("Compiler include_dirs after initialize: %s" % compiler.include_dirs)
         self.compiler = compiler
 
-        log.debug(sys.version) # contains the compiler used to build this python
+        logging.debug(sys.version) # contains the compiler used to build this python
 
         # members with the info for the outside world
         self.include_dirs = get_include_dirs()
@@ -227,7 +228,7 @@ class EnvironmentSniffer(object):
                 import mpi4py
                 self.include_dirs.append(mpi4py.get_include())
             except ImportError:
-                log.error("Could not import mpi4py. Skipping support for FFTW MPI.")
+                logging.error("Could not import mpi4py. Skipping support for FFTW MPI.")
                 self.support_mpi = False
 
         self.search_dependencies()
@@ -313,7 +314,7 @@ class EnvironmentSniffer(object):
         if 'PYFFTW_IGNORE_LONG' in os.environ:
             self.compile_time_env['HAVE_LONG'] = False
 
-        log.debug(repr(self.compile_time_env))
+        logging.debug(f"self.compile_time_env={self.compile_time_env}")
 
         # required package: FFTW itself
         have_fftw = False
@@ -323,7 +324,7 @@ class EnvironmentSniffer(object):
         if not have_fftw:
             raise LinkError("Could not find any of the FFTW libraries")
 
-        log.info('Build pyFFTW with support for FFTW with')
+        logging.info('Build pyFFTW with support for FFTW with')
         for d in data_types:
             if not self.compile_time_env[self.HAVE(d)]:
                 continue
@@ -334,7 +335,7 @@ class EnvironmentSniffer(object):
                 s += ' + pthreads'
             if self.compile_time_env[self.HAVE(d, 'MPI')]:
                 s += ' + MPI'
-            log.info(s)
+            logging.info(s)
 
     def check(self, lib_type, function, data_type, data_type_short, do_check):
         m = self.HAVE(data_type, lib_type)
@@ -386,7 +387,7 @@ class EnvironmentSniffer(object):
     def has_function(self, function, includes=None, objects=None, libraries=None,
                      include_dirs=None, library_dirs=None, linker_flags=None):
         '''Alternative implementation of distutils.ccompiler.has_function that
-deletes the output and hides calls to the compiler and linker.'''
+        deletes the output and hides calls to the compiler and linker.'''
         if includes is None:
             includes = []
         if objects is None:
@@ -400,6 +401,7 @@ deletes the output and hides calls to the compiler and linker.'''
         if linker_flags is None:
             linker_flags = self.linker_flags
 
+
         msg = "Checking"
         if function:
             msg += " for %s" % function
@@ -408,48 +410,68 @@ deletes the output and hides calls to the compiler and linker.'''
         msg += "..."
         status = "no"
 
-        log.debug("objects: %s" % objects)
-        log.debug("libraries: %s" % libraries)
-        log.debug("include dirs: %s" % include_dirs)
+        logging.debug("objects: %s" % objects)
+        logging.debug("libraries: %s" % libraries)
+        logging.debug("include dirs: %s" % include_dirs)
 
         import tempfile, shutil
 
         tmpdir = tempfile.mkdtemp(prefix='pyfftw-')
         try:
+            # construct test programs
             try:
                 fname = os.path.join(tmpdir, '%s.c' % function)
                 f = open(fname, 'w')
+
+                # inlcudes
                 for inc in includes:
                     f.write('#include <%s>\n' % inc)
-                f.write("""\
-                int main() {
-                """)
+
+                # c main function
+                f.write("int main() {\n")
+
+                # add function calls to test (remember to indent -- it's nice,
+                # even if not strictly necessary)
                 if function:
-                    f.write('%s();\n' % function)
-                f.write("""\
-                return 0;
-                }""")
+                    f.write('    %s();\n' % function)
+
+                # add return statement
+                f.write("    return 0;\n")
+                f.write("}")
             finally:
                 f.close()
                 # the root directory
                 file_root = os.path.abspath(os.sep)
+
+            # print test file to log
+            with open(fname, "r") as fs:
+                logging.debug(f"******** Test File ********\n{fs.read()}")
+                logging.debug(f"***************************")
+
+            # try to build the test programs
             try:
-                # output file is stored relative to input file since
-                # the output has the full directory, joining with the
-                # file root gives the right directory
+                # output file is stored relative to input file since the output
+                # has the full directory, joining with the file root gives the
+                # right directory
                 stdout = os.path.join(tmpdir, "compile-stdout")
                 stderr = os.path.join(tmpdir, "compile-stderr")
                 with stdchannel_redirected(sys.stdout, stdout), stdchannel_redirected(sys.stderr, stderr):
                     tmp_objects = self.compiler.compile([fname], output_dir=file_root, include_dirs=include_dirs)
-                with open(stdout, 'r') as f: log.debug(f.read())
-                with open(stderr, 'r') as f: log.debug(f.read())
+                with open(stdout, 'r') as fo, open(stderr, 'r') as fe:
+                    logging.debug(f"******** Compiling ********\n{fo.read()}\n{fe.read()}")
+                    logging.debug(f"***************************")
             except CompileError:
-                with open(stdout, 'r') as f: log.debug(f.read())
-                with open(stderr, 'r') as f: log.debug(f.read())
+                with open(stdout, 'r') as fo, open(stderr, 'r') as fe:
+                    logging.debug(f"******** Compiler error ********\n{fo.read()}\n{fe.read()}")
+                    logging.debug(f"********************************")
+                # logging.debug("returning False -- CompileError")
                 return False
             except Exception as e:
-                log.error(e)
+                logging.error(e)
+                # logging.debug("returning False -- 1")
                 return False
+
+            # try to link the test program
             try:
                 # additional objects should come last to resolve symbols, linker order matters
                 tmp_objects.extend(objects)
@@ -463,21 +485,27 @@ deletes the output and hides calls to the compiler and linker.'''
                                                   libraries=libraries,
                                                   extra_preargs=linker_flags,
                                                   library_dirs=library_dirs)
-                with open(stdout, 'r') as f: log.debug(f.read())
-                with open(stderr, 'r') as f: log.debug(f.read())
+                with open(stdout, 'r') as fo, open(stderr, 'r') as fe:
+                    logging.debug(f"******** Linking ********\n{fo.read()}\n{fe.read()}")
+                    logging.debug(f"*************************")
             except (LinkError, TypeError):
-                with open(stdout, 'r') as f: log.debug(f.read())
-                with open(stderr, 'r') as f: log.debug(f.read())
+                with open(stdout, 'r') as fo, open(stderr, 'r') as fe:
+                    logging.debug(f"******** Linker Error ********\n{fo.read()}\n{fe.read()}")
+                    logging.debug(f"******************************")
+                # logging.debug("returning False -- LinkError")
                 return False
             except Exception as e:
-                log.error(e)
+                logging.error(e)
+                #logging.debug("returning False -- 2")
                 return False
             # no error, seems to work
             status = "ok"
+            logging.debug("returning True")
+
             return True
         finally:
             shutil.rmtree(tmpdir)
-            log.debug(msg + status)
+            logging.debug(msg + status)
 
     def has_header(self, headers, include_dirs=None):
         '''Check for existence and usability of header files by compiling a test file.'''
@@ -550,10 +578,10 @@ class DynamicSniffer(EnvironmentSniffer):
 
 def make_sniffer(compiler):
     if os.environ.get('STATIC_FFTW_DIR', None) is None:
-        log.debug("Link FFTW dynamically")
+        logging.debug("Link FFTW dynamically")
         return DynamicSniffer(compiler)
     else:
-        log.debug("Link FFTW statically")
+        logging.debug("Link FFTW statically")
         return StaticSniffer(compiler)
 
 def get_extensions():
@@ -808,4 +836,17 @@ def setup_package():
     setup(**setup_args)
 
 if __name__ == '__main__':
+    # distutils.log somehow doesn't work -- so I'm using python's regular
+    # logging infrastructure
+    if 'PYFFTW_BUILD_DETAIL' in os.environ:
+        if os.environ['PYFFTW_BUILD_DETAIL'] == "debug":
+            logging.basicConfig(level=logging.DEBUG)
+        elif os.environ['PYFFTW_BUILD_DETAIL'] == "warning":
+            logging.basicConfig(level=logging.WARNING)
+        else:
+            logging.basicConfig(level=logging.ERROR)
+    else:
+        logging.basicConfig(level=logging.ERROR)
+
+    # build package
     setup_package()
