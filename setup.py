@@ -231,6 +231,23 @@ class EnvironmentSniffer(object):
                 logging.error("Could not import mpi4py. Skipping support for FFTW MPI.")
                 self.support_mpi = False
 
+        if "PYFFTW_EXTRA_LINK_FLAGS" in os.environ:
+            for flg in os.environ["PYFFTW_EXTRA_LINK_FLAGS"].split(","):
+                self.linker_flags.append(flg)
+
+        if "PYFFTW_EXTRA_LIBS" in os.environ:
+            for flg in os.environ["PYFFTW_EXTRA_LIBS"].split(","):
+                self.libraries.append(flg)
+
+        if "PYFFTW_EXTRA_INCLUDE_DIRS" in os.environ:
+            for flg in os.environ["PYFFTW_EXTRA_INCLUDE_DIRS"].split(","):
+                self.include_dirs.append(flg)
+
+        if "PYFFTW_EXTRA_LIBRARY_DIRS" in os.environ:
+            for flg in os.environ["PYFFTW_EXTRA_LIBRARY_DIRS"].split(","):
+                self.library_dirs.append(flg)
+
+        print(self.library_dirs)
         self.search_dependencies()
 
     def search_dependencies(self):
@@ -478,8 +495,8 @@ class EnvironmentSniffer(object):
                 stdout = os.path.join(tmpdir, "link-stdout")
                 stderr = os.path.join(tmpdir, "link-stderr")
                 with stdchannel_redirected(sys.stdout, stdout), stdchannel_redirected(sys.stderr, stderr):
-                    # TODO using link_executable, LDFLAGS that the
-                    # user can modify are ignored
+                    # TODO using link_executable, LDFLAGS that the user can
+                    # modify are ignored
                     self.compiler.link_executable(tmp_objects, 'a.out',
                                                   output_dir=tmpdir,
                                                   libraries=libraries,
@@ -511,7 +528,7 @@ class EnvironmentSniffer(object):
         '''Check for existence and usability of header files by compiling a test file.'''
         return self.has_function(None, includes=headers, include_dirs=include_dirs)
 
-    def has_library(function, lib):
+    def has_library(self, function, lib):
         raise NotImplementedError
 
     def openmp_linker_flag(self):
