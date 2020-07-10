@@ -602,8 +602,17 @@ def make_sniffer(compiler):
         return StaticSniffer(compiler)
 
 def get_extensions():
+    # RPATH version
+    # ext_modules = [Extension('pyfftw.pyfftw',
+    #                          sources=[os.path.join('pyfftw', 'pyfftw.pyx')],
+    #                          extra_link_args=["-Wl,-rpath,/opt/intel/mkl/lib/intel64/"]
+    #                          )
+    #               ]
     ext_modules = [Extension('pyfftw.pyfftw',
-                             sources=[os.path.join('pyfftw', 'pyfftw.pyx')])]
+                             sources=[os.path.join('pyfftw', 'pyfftw.pyx')]
+                             )
+                  ]
+
     return ext_modules
 
 
